@@ -3,68 +3,76 @@
 <head>
   <meta charset="UTF-8" />
   <title>妆容报告生成器</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- libs -->
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/file-saver@2.0.5/dist/FileSaver.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
-    body { font-family: 'Microsoft YaHei', sans-serif; background: #f5f5f5; margin: 0; padding: 0; text-align: center; }
-    .toolbar {
-  position: fixed;
-  top: 0;
-  left: 40%;
-  transform: translateX(-33%); /* 按 33% 偏移 */
-  background: #fff;
-  border-bottom: 1px solid #ccc;
-  padding: 10px;
-  display: flex;
-  gap: 8px;
-  z-index: 1000;
-}
+    :root { --baseW: 750; --ox: 65px; --oy: 0px; }
 
-    .toolbar button, .toolbar label { padding: 8px 16px; min-width: 120px; background-color: #28a745; color: #fff; border: none; border-radius: 5px; font-size: 14px; cursor: pointer; text-align: center; }
+    * { box-sizing: border-box; }
+    body { font-family: 'Microsoft YaHei', system-ui, -apple-system, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", Arial, sans-serif; background:#f5f5f5; margin:0; padding:16px; color:#111; }
+
+    .content { display:flex; justify-content:center; align-items:flex-start; gap:20px; }
+
+    /* 舞台：报告和工具栏共享同一宽度，JS 会同步设置宽度 */
+    .stage { width:auto; margin:0 auto; }
+
+    /* 工具栏不再固定置顶，跟随舞台宽度，始终与模版同宽、同居中 */
+    .toolbar{
+      position: relative;
+      margin: 0 auto 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: flex-start; /* 如需居中，可改成 center */
+      background: transparent;
+      border: 0;
+      padding: 0;
+    }
+    .toolbar button, .toolbar label {
+      padding: 8px 16px; min-width: 120px;
+      background-color: #28a745; color: #fff;
+      border: none; border-radius: 6px; font-size: 14px; cursor: pointer;
+      text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,.05);
+    }
     .toolbar input[type=file] { display: none; }
     .toolbar button:hover, .toolbar label:hover { background-color: #218838; }
 
-    .content { padding-top: 110px; display:flex; justify-content:center; align-items:flex-start; gap:20px; }
-    .preview-wrapper { flex: 0 0 auto; display: flex; justify-content: center; width: auto; }
-    .preview { position: relative; display: inline-block; border: 1px solid #ccc; border-radius: 8px; background: #fff; margin: 0 auto; }
-    .preview img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+    .preview-wrapper { display:flex; justify-content:center; width:auto; }
+    .preview { position: relative; display: inline-block; border: 1px solid #ddd; border-radius: 8px; background:#fff; margin:0 auto; }
+    .preview img { display:block; max-width:100%; height:auto; margin:0 auto; }
 
-    .field-input { position: absolute; width: 260px; height: 60px; line-height: 60px; box-sizing: border-box; padding: 0; text-align:left; background: transparent; font-size: 26px; color: #000; outline: none; font-family: 'Microsoft YaHei', sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .fields { position:absolute; top:0; left:50%; width: calc(var(--baseW) * 1px); transform-origin: top center; transform: translate(calc(-50% + var(--ox)), var(--oy)) scale(var(--scale, 1)); }
+
+    .field-input { position:absolute; width:260px; height:60px; line-height:60px; padding:0; text-align:left; background:transparent; font-size:26px; color:#000; outline:none; font-family: inherit; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
     .field-input[contenteditable="true"]{ cursor:text; }
     .field-input[data-placeholder]:empty::before{ content: attr(data-placeholder); color:#b8b8b8; }
 
-    :root { --baseW: 750; --ox: 65px; --oy: 0px; }
-    .fields { position: absolute; top: 0; left: 50%; width: calc(var(--baseW) * 1px); transform-origin: top center; transform: translate(calc(-50% + var(--ox)), var(--oy)) scale(var(--scale, 1)); }
-
+    /* 你的字段坐标（以 baseW=750 为基准） */
     .class  { top: 470px; left: 160px; }
     .name   { top: 545px; left: 160px; }
     .eye    { top: 620px; left: 225px; }
     .brow   { top: 700px; left: 225px; }
     .blush  { top: 780px; left: 225px; }
     .lip    { top: 855px; left: 225px; }
-    .makeup { top: 935px; left: 225px; width: 260px; }
+    .makeup { top: 935px; left: 225px; width:260px; }
 
+    /* 进度条 */
     .progress { position: fixed; left: 50%; transform: translateX(-50%); bottom: 20px; background: #fff; color: #333; padding: 12px 16px; border-radius: 10px; font-size: 12px; display: none; z-index: 1200; box-shadow: 0 6px 24px rgba(0,0,0,0.15); min-width: 320px; text-align: left; }
     .progress .title { font-weight: 700; margin-bottom: 6px; }
     .progress .bar { width: 100%; height: 10px; background: #eee; border-radius: 999px; overflow: hidden; }
     .progress .bar > div { height: 100%; width: 0%; background: linear-gradient(90deg,#7c3aed,#a855f7); border-radius: 999px; transition: width .15s ease; }
     .progress .desc { margin-top: 6px; font-size: 12px; color: #666; }
 
-    #resultThumb { max-width:200px; border:1px solid #ccc; border-radius:8px; display:none; cursor:pointer; }
+    /* 右侧预览缩略图 */
+    #resultThumb { max-width:200px; border:1px solid #ccc; border-radius:8px; display:none; cursor:pointer; background:#fff; }
   </style>
 </head>
 <body>
-  <div class="toolbar">
-    <button id="downloadTplXlsx">下载模版表格</button>
-    <label for="dataFile">上传模版文件</label>
-    <input id="dataFile" type="file" accept=".csv,.xlsx,.xls" />
-    <button id="batchGen">开始批量生成</button>
-    <button id="singlePreviewBtn">生成单个（预览）</button>
-  </div>
-
   <div id="prog" class="progress" style="display:none;">
     <div class="title">批量生成进度</div>
     <div class="bar"><div id="progFill"></div></div>
@@ -72,29 +80,47 @@
   </div>
 
   <div class="content">
-    <div class="preview-wrapper">
-      <div id="report" class="preview">
-        <!-- 默认直接加载 template.png 作为模版 -->
-        <img id="bgImg" src="template.png" alt="背景" />
-        <div id="fields" class="fields">
-          <div class="field-input class"  id="class"  contenteditable="true" data-placeholder="班级"></div>
-          <div class="field-input name"   id="name"   contenteditable="true" data-placeholder="姓名"></div>
-          <div class="field-input eye"    id="eye"    contenteditable="true" data-placeholder="眼妆建议"></div>
-          <div class="field-input brow"   id="brow"   contenteditable="true" data-placeholder="眉妆建议"></div>
-          <div class="field-input blush"  id="blush"  contenteditable="true" data-placeholder="腮红建议"></div>
-          <div class="field-input lip"    id="lip"    contenteditable="true" data-placeholder="唇妆建议"></div>
-          <div class="field-input makeup" id="makeup" contenteditable="true" data-placeholder="妆容建议"></div>
+    <!-- 舞台：工具栏 + 报告同宽 -->
+    <div class="stage" id="stage">
+      <div class="toolbar">
+        <button id="downloadTplXlsx">下载模版表格</button>
+        <label for="dataFile">上传模版文件</label>
+        <input id="dataFile" type="file" accept=".csv,.xlsx,.xls" />
+        <button id="batchGen">开始批量生成</button>
+        <button id="singlePreviewBtn">生成单个（预览）</button>
+      </div>
+
+      <div class="preview-wrapper">
+        <div id="report" class="preview">
+          <!-- 默认直接加载 template.png 作为模版（放在同目录） -->
+          <img id="bgImg" src="template.png" alt="背景" />
+          <div id="fields" class="fields">
+            <div class="field-input class"  id="class"  contenteditable="true" data-placeholder="班级"></div>
+            <div class="field-input name"   id="name"   contenteditable="true" data-placeholder="姓名"></div>
+            <div class="field-input eye"    id="eye"    contenteditable="true" data-placeholder="眼妆建议"></div>
+            <div class="field-input brow"   id="brow"   contenteditable="true" data-placeholder="眉妆建议"></div>
+            <div class="field-input blush"  id="blush"  contenteditable="true" data-placeholder="腮红建议"></div>
+            <div class="field-input lip"    id="lip"    contenteditable="true" data-placeholder="唇妆建议"></div>
+            <div class="field-input makeup" id="makeup" contenteditable="true" data-placeholder="妆容建议"></div>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- 右侧：单张生成缩略图 -->
     <div>
       <div style="font-size:14px;color:#555;margin-bottom:6px;">单个生成缩略图（直接右键复制/保存）</div>
-      <img id="resultThumb" />
+      <img id="resultThumb" alt="预览缩略图" />
     </div>
   </div>
 
   <script>
-    // 下载Excel模板
+    // ====== 工具函数 ======
+    function safeName(s){
+      return String(s || '').trim().replace(/[\\/:*?"<>|]/g,'_').slice(0,60) || 'report';
+    }
+
+    // ====== 下载 Excel 模板 ======
     document.getElementById('downloadTplXlsx').addEventListener('click', () => {
       const headers = [['班级','姓名','眼妆建议','眉妆建议','腮红建议','唇妆建议','妆容建议']];
       const ws = XLSX.utils.aoa_to_sheet(headers);
@@ -104,40 +130,73 @@
       saveAs(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}), '妆容报告名单模版.xlsx');
     });
 
-    const bgImg     = document.getElementById('bgImg');
-    const fields    = document.getElementById('fields');
+    // ====== DOM 引用 ======
+    const bgImg  = document.getElementById('bgImg');
+    const report = document.getElementById('report');
+    const fields = document.getElementById('fields');
+    const stage  = document.getElementById('stage');
 
+    // ====== 自适应首屏显示 & 锁定按钮水平比例 ======
+    let _rf;
     function applyScale(){
       const baseW = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--baseW')) || 750;
-      const w = bgImg.naturalWidth || bgImg.width; if(!w) return;
-      const s = w / baseW;
-      fields.style.setProperty('--scale', s);
-      document.getElementById('report').style.width = w + 'px';
-      document.getElementById('report').style.margin = '0 auto'; // 确保居中
-    }
+      const natW  = bgImg.naturalWidth  || bgImg.width;
+      const natH  = bgImg.naturalHeight || bgImg.height;
+      if(!natW || !natH) return;
 
+      // 可用空间（左右留白 32px）
+      const availW = Math.max(320, window.innerWidth - 32);
+      const availH = Math.max(320, window.innerHeight - 46); // 顶/底留白
+
+      // 等比缩放：既不超过可用宽度，也不超过可用高度；不放大超过原图以免糊
+      const k = Math.min(1, availW/natW, availH/natH);
+      const dispW = Math.round(natW * k);
+
+      // 同步设置：背景图宽度、报告容器宽度、舞台宽度（=> 工具栏同宽）
+      bgImg.style.width   = dispW + 'px';
+      report.style.width  = dispW + 'px';
+      report.style.margin = '0 auto';
+      if (stage) stage.style.width = dispW + 'px';
+
+      // 字段等比缩放（以 baseW 为基准）
+      const s = dispW / baseW;
+      fields.style.setProperty('--scale', s);
+    }
+    function onResize(){
+      cancelAnimationFrame(_rf);
+      _rf = requestAnimationFrame(applyScale);
+    }
+    window.addEventListener('resize', onResize);
     bgImg.onload = applyScale;
 
+    // ====== 模板跨域安全处理 ======
     async function ensureSafeImageURL(imgEl) {
-      let s = imgEl && imgEl.src ? imgEl.src : '';
+      let s = imgEl?.src || '';
       if (!s) throw new Error('尚未选择模板图片。');
-      if (s.startsWith('blob:') || s.startsWith('data:') || s.endsWith('template.png')) return s;
+      try {
+        const u = new URL(s, location.href);
+        const sameOrigin = u.origin === location.origin;
+        if (s.startsWith('blob:') || s.startsWith('data:') || (sameOrigin && /template\.png$/i.test(u.pathname))) return s;
+      } catch(_) {}
+      // 跨源 → 画到 canvas 转 dataURL
       return await new Promise((resolve, reject) => {
         const t = new Image(); t.crossOrigin = 'anonymous';
         t.onload = () => {
-          try { const c = document.createElement('canvas');
-            c.width = t.naturalWidth || t.width; c.height = t.naturalHeight || t.height;
-            c.getContext('2d').drawImage(t,0,0); resolve(c.toDataURL('image/png')); }
-          catch(e){ reject(e); }
+          try {
+            const c = document.createElement('canvas');
+            c.width = t.naturalWidth; c.height = t.naturalHeight;
+            c.getContext('2d').drawImage(t,0,0);
+            resolve(c.toDataURL('image/png'));
+          } catch(e){ reject(e); }
         };
         t.onerror = () => reject(new Error('模板图片无法转为安全来源。'));
         t.src = s;
       });
     }
 
+    // ====== 将报告渲染成画布 ======
     async function renderToCanvas(){
       const safeURL = await ensureSafeImageURL(bgImg);
-      const report = document.getElementById('report');
       const canvas = await html2canvas(report, {
         scale: 2,
         useCORS: true,
@@ -151,15 +210,18 @@
       return canvas;
     }
 
+    // ====== 单个预览 ======
     document.getElementById('singlePreviewBtn').addEventListener('click', async () => {
       try {
         const canvas = await renderToCanvas();
         const dataURL = canvas.toDataURL('image/png');
         const thumb = document.getElementById('resultThumb');
-        thumb.src = dataURL; thumb.style.display = 'block';
+        thumb.src = dataURL;
+        thumb.style.display = 'block';
       } catch (e) { console.error(e); alert('生成失败：' + e.message); }
     });
 
+    // ====== 读取数据文件 ======
     let dataRows = [];
     document.getElementById('dataFile').addEventListener('change', async (e)=>{
       try {
@@ -179,6 +241,7 @@
       } catch(err){ console.error(err); alert('读取表格失败：' + err.message); }
     });
 
+    // ====== 批量生成 ZIP ======
     document.getElementById('batchGen').addEventListener('click', async ()=>{
       if (!dataRows.length){ alert('请先选择 CSV/Excel 数据文件'); return; }
       try { await ensureSafeImageURL(bgImg); } catch(e){ alert(e.message); return; }
@@ -204,7 +267,7 @@
           await new Promise(r=>requestAnimationFrame(r));
           const canvas = await renderToCanvas();
           const blob = await new Promise(res=>canvas.toBlob(res));
-          const filename = (row['姓名']||('report_'+(i+1))) + '.png';
+          const filename = safeName(row['姓名'] || ('report_'+(i+1))) + '.png';
           zip.file(filename, blob);
 
           const pct = Math.round(((i+1)/dataRows.length)*85);
@@ -212,13 +275,23 @@
         }
         setProgress(90,'正在打包压缩…');
         const zipBlob = await zip.generateAsync({ type:'blob' }, m=>{
-          const extra = Math.round((m.percent||0)*0.1); setProgress(90+extra, `压缩中… ${Math.round(m.percent||0)}%`);
+          const extra = Math.round((m.percent||0)*0.1);
+          setProgress(90+extra, `压缩中… ${Math.round(m.percent||0)}%`);
         });
         setProgress(100,'完成，准备下载…');
         saveAs(zipBlob, '批量报告.zip');
-        const url = URL.createObjectURL(zipBlob); const a = document.createElement('a'); a.href=url; a.download='批量报告.zip'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
-      } catch(err){ console.error(err); alert('生成过程中出现问题：' + (err && err.message ? err.message : err)); }
-      finally { setTimeout(()=>{ panel.style.display='none'; fill.style.width='0%'; text.textContent=''; }, 1500); }
+        // 兼容处理：触发一次 a.click
+        const url = URL.createObjectURL(zipBlob);
+        const a = document.createElement('a');
+        a.href = url; a.download = '批量报告.zip';
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch(err){
+        console.error(err);
+        alert('生成过程中出现问题：' + (err && err.message ? err.message : err));
+      } finally {
+        setTimeout(()=>{ panel.style.display='none'; fill.style.width='0%'; text.textContent=''; }, 1500);
+      }
     });
 
     function setField(id, v){ const el = document.getElementById(id); if(el) el.textContent = v; }
